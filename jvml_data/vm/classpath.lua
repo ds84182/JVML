@@ -13,7 +13,7 @@ end
 function newInstance(class)
 	local obj = {fields={},methods={},name=class.name,class=class}
 	for i, v in pairs(class.fields) do
-		obj.fields[i] = {type=v.type,attrib=v.attrib,value=nil}
+		obj.fields[i] = {descriptor=v.descriptor,attrib=v.attrib,value=nil}
 	end
 	for i, v in pairs(class.methods) do
 		obj.methods[i] = v
@@ -57,6 +57,7 @@ function createClass(super_name, cn)
 	cls.methods = {}
 	if super_name then -- we have a custom Object class file which won't have a super
 		local super = classByName(super_name)
+		cls.super = super
 		for i,v in pairs(super.fields) do
 			cls.fields[i] = v
 		end
@@ -65,6 +66,48 @@ function createClass(super_name, cn)
 		end
 	end
 	return cls
+end
+
+local function _classof(class1, class2)
+	if class1 == class2 or classof(class1.super, class2) then
+		return true
+	else
+		local cp = class1.constantPool
+		for i,v in ipairs(class1.interfaces) do
+			if classof(classByName(cp[cp[v].name_index].bytes:gsub("/",".")), class2) then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+local wrappers = {
+	I="java.lang.Integer",
+	F="java.lang.Float",
+	D="java.lang.Double",
+	J="java.lang.Long",
+	Z="java.lang.Boolean",
+	C="java.lang.Character",
+	B="java.lang.Byte",
+	S="java.lang.Short"
+}
+
+local function wrapperof(type)
+	if type:len() == 1 then
+		return wrappers[type]
+	end
+	return type
+end
+
+function classof(class1, class2)
+	if class1 == class2 then
+		return true
+	end
+	local root1,root2 = class1:gsub("^%[*", ""), class2:gsub("^%[*", "")
+	class1 = gsub("[^%[]$", wrapperof(root1))
+	class2 = gsub("[^%[]$", wrapperof(root2))
+	return _classof(classByName(class1), classByName(class2))
 end
 
 function pushStackTrace(s)

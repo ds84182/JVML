@@ -1,5 +1,6 @@
 import java.io.*;
 import cc.*;
+import java.util.Iterator;
 
 class Test {
 	public void m() {
@@ -8,6 +9,8 @@ class Test {
 }
 
 class Yo extends Test {
+	int a = 4;
+
 	public Yo() {
 		System.out.println("Yo constructor");
 	}
@@ -17,6 +20,10 @@ class Yo extends Test {
 		System.out.println("Yo.m");
 	}
 	public void v() {
+		int b = a;
+		b++;
+		a = b;
+		System.out.println(b);
 		m();
 	}
 }
@@ -36,19 +43,37 @@ public class MyFirstProgram {
 		t.m();
 
 
-		int[] arr = new int[4];
-		arr[0] = 3;
+		Iterable<String> i = new Iterable<String>() {
+			public Iterator<String> iterator() {
+				return new Iterator<String>() {
+					String[] arr = {"Hey", "You", "Mr.", "Clue"};
+					int i = 0;
 
-		if (arr[0] == 3) {
-			System.out.println(arr.length);
-			System.out.println(arr.toString());
-			System.out.println(arr[0]);
-		} else {
-			System.out.println("FAILURE");
-		}
+					{
+						arr[0] = "Hey";
+						arr[1] = "You";
+						arr[2] = "Mr.";
+						arr[3] = "Clue";
+					}
 
-		for (int v : arr) {
-			System.out.println(v);
+					public boolean hasNext() {
+						if (i < arr.length)
+							return true;
+						return false;
+					}
+					public String next() {
+						return arr[i++];
+					}
+					public void remove() {
+
+					}
+				};
+			}
+		};
+
+
+		for (String s : i) {
+			System.out.println(s);
 		}
 	}
 	

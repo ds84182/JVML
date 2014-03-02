@@ -489,7 +489,7 @@ function loadJavaClass(file)
 					if s.bytes then
 						push({type=s.cl,data=s.bytes})
 					else
-						push(asObjRef(cp[s.string_index].bytes, "Ljava/java/lang/String;"))
+						push(asObjRef(cp[s.string_index].bytes, "Ljava/lang/String;"))
 					end
 				elseif inst == 0x13 then
 					--ldc_w
@@ -542,7 +542,7 @@ function loadJavaClass(file)
 				elseif inst >= 0x4f and inst <= 0x56 then
 					--aastore
 					local v,i,t = pop(),pop(),pop()
-					if v.type ~= t.type:sub(2) then
+					if not classof(v.type, t.type:sub(2)) then
 						error("Type mismatch in array assignment: " .. v.type .. " -> " .. t.type, 0)
 					end
 					if i.data >= t.data.length then
@@ -819,9 +819,22 @@ function loadJavaClass(file)
 					local cl = resolveClass(cp[fr.class_index])
 					local name = cp[cp[fr.name_and_type_index].name_index].bytes
 					cl.fields[name].value = pop().data
-				elseif inst == 0xB6 then
-					--invokevirtual
+				elseif inst == 0xB4 then
+					local fr = cp[u2()]
+					local name = cp[cp[fr.name_and_type_index].name_index].bytes
+					local obj = pop().data
+					push(asObjRef(obj.fields[name].value, obj.fields[name].descriptor))
+				elseif inst == 0xB5 then
+					--putfield
+					local fr = cp[u2()]
+					local name = cp[cp[fr.name_and_type_index].name_index].bytes
+					local value = pop().data
+					local obj = pop().data
+					obj.fields[name].value = value
+				elseif inst == 0xB6 or inst == 0xB9 then
+					--invokevirtual/interface
 					local mr = cp[u2()]
+					if inst == 0xB9 then u2() end -- invokeinterface has two dead bytes in the instruction
 					local cl = resolveClass(cp[mr.class_index])
 					local name = cp[cp[mr.name_and_type_index].name_index].bytes..cp[cp[mr.name_and_type_index].descriptor_index].bytes
 					local mt = findMethod(cl,name)
@@ -906,6 +919,14 @@ function loadJavaClass(file)
 					--arraylength
 					local arr = pop()
 					push(asInt(arr.data.length))
+				elseif inst == 0xC0 then
+					--checkcast
+					local obj = pop()
+					local cl = "L"..cp[cp[u2()].name_index].bytes..";"
+					if not classof(obj.type, cl) then
+						error("Failed cast")
+					end
+					push(obj)
 				else
 					error("Unknown Opcode: "..string.format("%x",inst))
 				end
@@ -955,6 +976,7 @@ function loadJavaClass(file)
 			super = cp[cp[super_class].name_index].bytes:gsub("/",".")
 		end
 		local Class = createClass(super, cn)
+		Class.constantPool = cp
 		
 		--start processing the data
 		Class.name = cn
@@ -963,7 +985,7 @@ function loadJavaClass(file)
 		local interfaces_count = u2()
 		Class.interfaces = {}
 		for i=0, interfaces_count-1 do
-			interfaces[i] = u2()
+			Class.interfaces[i] = u2()
 		end
 		local fields_count = u2()
 		for i=0, fields_count-1 do
@@ -1009,7 +1031,7 @@ function loadJavaClass(file)
 					return ret
 				end
 			else
-				print(m.name," doesn't have code")
+				--print(m.name," doesn't have code")
 			end
 		end
 		local attrib_count = u2()
