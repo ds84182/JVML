@@ -18,5 +18,5 @@ env.jcp = env.jcp .. ":/" .. env.jcd -- So that loadJavaClass isn't needed here 
 local ok, err = pcall(env.findMethod(env.classByName("MyFirstProgram"),"main([Ljava/lang/String;)V")[1])
 if not ok then
 	printError(err)
-	env.printStackTrace(true)
+	env.printStackTrace(true, 1)
 end

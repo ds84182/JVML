@@ -75,10 +75,12 @@ function popStackTrace()
 	table.remove(stack_trace)
 end
 
-function printStackTrace(isError)
+function printStackTrace(isError, tabLevel)
 	local reversedtable = {}
 	for i,v in ipairs(stack_trace) do
 		reversedtable[#stack_trace - i + 1] = v
 	end
-	((isError and printError) or print)(table.concat(reversedtable,"\n"))
+	local p = ((isError and printError) or print)
+	local tabs = ("\t"):rep(tabLevel or 0)
+	p(tabs..table.concat(reversedtable,"\n"..tabs))
 end
