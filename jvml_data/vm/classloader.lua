@@ -930,8 +930,12 @@ function loadJavaClass(file)
 				elseif inst == 0xC1 then
 					--instanceof
 					local obj = pop()
-					local cl = "L"..cp[cp[u2()].name_index].bytes..";"
-					push(asBoolean(classof(obj.type, cl)))
+					if not obj then
+						push(asBoolean(false))
+					else
+						local cl = "L"..cp[cp[u2()].name_index].bytes..";"
+						push(asBoolean(classof(obj.type, cl)))
+					end
 				else
 					error("Unknown Opcode: "..string.format("%x",inst))
 				end

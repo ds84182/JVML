@@ -69,13 +69,18 @@ function createClass(super_name, cn)
 end
 
 local function _classof(class1, class2)
-	if class1 == class2 or classof(class1.super, class2) then
-		return true
+	if class1 == class2 then
+		return 0
+	end
+	local dist = classof(class1.super, class2)
+	if dist then
+		return dist
 	else
 		local cp = class1.constantPool
 		for i,v in ipairs(class1.interfaces) do
-			if classof(classByName(cp[cp[v].name_index].bytes:gsub("/",".")), class2) then
-				return true
+			local dist = classof(classByName(cp[cp[v].name_index].bytes:gsub("/",".")), class2)
+			if dist then
+				return dist
 			end
 		end
 	end
