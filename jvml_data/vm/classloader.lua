@@ -927,6 +927,11 @@ function loadJavaClass(file)
 						error("Failed cast")
 					end
 					push(obj)
+				elseif inst == 0xC1 then
+					--instanceof
+					local obj = pop()
+					local cl = "L"..cp[cp[u2()].name_index].bytes..";"
+					push(asBoolean(classof(obj.type, cl)))
 				else
 					error("Unknown Opcode: "..string.format("%x",inst))
 				end

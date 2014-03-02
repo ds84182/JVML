@@ -75,6 +75,8 @@ public class MyFirstProgram {
 		for (String s : i) {
 			System.out.println(s);
 		}
+
+		System.out.println("" instanceof String);
 	}
 	
 	public static int getNumber()
