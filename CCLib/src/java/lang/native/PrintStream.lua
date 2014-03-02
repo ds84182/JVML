@@ -1,21 +1,21 @@
 natives["java.io.PrintStream"] = natives["java.io.PrintStream"] or {}
 
-local function lprint(s)
+local function lprint(s, p)
 	if s ~= nil then
-		print(s)
+		p(s)
 	else
-		print("(null)")
+		p("(null)")
 	end
 end
 
 natives["java.io.PrintStream"]["println(Ljava/lang/String;)V"] = function(this, str)
-	lprint(str)
+	lprint(str, this.fields.err.value ~= 0 and printError or print)
 end
 
 natives["java.io.PrintStream"]["println(Z)V"] = function(this, str)
-	lprint(str)
+	lprint(str == 0, this.fields.err.value ~= 0 and printError or print)
 end
 
 natives["java.io.PrintStream"]["println(I)V"] = function(this, str)
-	lprint(str)
+	lprint(str, this.fields.err.value ~= 0 and printError or print)
 end

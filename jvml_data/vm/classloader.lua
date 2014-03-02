@@ -22,6 +22,11 @@ function asLong(d)
 	return {type="J",data=d}
 end
 function asBoolean(d)
+	if d == true or d == 0 then
+		d = 0
+	else
+		d = 1
+	end
 	return {type="Z",data=d}
 end
 function asChar(d)
@@ -125,6 +130,7 @@ CLASS_ACC = {
 }
 
 function loadJavaClass(file)
+	if not file then error('test', 2) end
 	if not fs.exists(file) then return false end
 	local fh = fs.open(file,"rb")
 	local cn
@@ -372,7 +378,17 @@ function loadJavaClass(file)
 				}
 			end
 		elseif an == "LocalVariableTable" then
-			error("LVT is so mainstream",0)
+			attrib.local_variable_table_length = u2()
+			attrib.local_variable_table = {}
+			for i=0, attrib.local_variable_table_length-1 do
+				attrib.local_variable_table[i] = {
+					start_pc = u2(),
+					length = u2(),
+					name_index = u2(),
+					descriptor_index = u2(),
+					index = u2()
+				}
+			end
 		elseif an == "LocalVariableTypeTable" then
 			error("LVTT is so mainstream",0)
 		elseif an == "Deprecated" then
@@ -408,10 +424,10 @@ function loadJavaClass(file)
 		return classByName(cn)
 	end
 
-
-	local function createCodeFunction(code, name)
+	local function createCodeFunction(codeAttribute, name)
+		local code = codeAttribute.code
 		return function(...)
-			pushStackTrace(name)
+			local thrown
 
 			local stack = {}
 			local lvars = {}
@@ -440,10 +456,46 @@ function loadJavaClass(file)
 			local function u2()
 				return bit.blshift(u1(),8) + u1()
 			end
+
+			local function catchException(exc)
+				local pcStartDistance
+				local pcEndDistance
+				local classDistance
+				local closestTarget
+				local p = pc()
+				for i=0, codeAttribute.exception_table_length-1 do
+					local v = codeAttribute.exception_table[i]
+					if p >= v.start_pc and p <= v.end_pc and (not pcStartDistance or (p - v.start_pc >= pcStartDistance and v.end_pc - p >= pcEndDistance))then
+						local dist = classof("L"..cp[cp[v.catch_type].name_index].bytes..";", exc.type)
+						if not classDistance or dist < classDistance then
+							pcStartDistance = p - v.start_pc
+							pcEndDistance = v.end_pc - p
+							classDistance = dist
+							closestTarget = v.handler_pc
+						end
+					end
+				end
+				if closestTarget then
+					pc(closestTarget)
+					return true
+				else
+					return false
+				end
+			end
+			local function throw(exc)
+				push(exc)
+				exc.data.stackTrace = getStackTrace()
+				if not catchException(exc) then
+					thrown = exc
+				end
+			end
+			pushStackTrace(name, throw)
 			
 			while true do
+				if thrown then
+					return false, thrown
+				end
 				local inst = u1()
-				FROM = classByName(cn)
 				if inst == 0x0 then
 				elseif inst == 0x1 then
 					--null
@@ -524,7 +576,9 @@ function loadJavaClass(file)
 					--aaload
 					local i, arr = pop(), pop()
 					if i.data >= arr.data.length then
-						error("Index out of bounds", 0)
+						local exc = newInstance(classByName("java.lang.ArrayIndexOutOfBoundsException"))
+						local obj = asObjRef(exc, "Ljava/lang/ArrayIndexOutOfBoundsException;")
+						throw(obj)
 					end
 					local value = arr.data[i.data]
 					push(asObjRef(value, arr.type:sub(2))) -- arr.type == "[typestuff", so remove the bracket
@@ -542,11 +596,10 @@ function loadJavaClass(file)
 				elseif inst >= 0x4f and inst <= 0x56 then
 					--aastore
 					local v,i,t = pop(),pop(),pop()
-					if not classof(v.type, t.type:sub(2)) then
-						error("Type mismatch in array assignment: " .. v.type .. " -> " .. t.type, 0)
-					end
 					if i.data >= t.data.length then
-						error("Index out of bounds", 0)
+						local exc = newInstance(classByName("java.lang.ArrayIndexOutOfBoundsException"))
+						local obj = asObjRef(exc, "Ljava/lang/ArrayIndexOutOfBoundsException;")
+						throw(obj)
 					end
 					t.data[i.data] = v.data
 				elseif inst == 0x57 then
@@ -801,24 +854,28 @@ function loadJavaClass(file)
 					pc(addr.data)
 				elseif inst >= 0xAC and inst <= 0xB0 then
 					popStackTrace()
-					return pop()
+					return true, pop()
 				elseif inst == 0xB1 then
 					popStackTrace()
-					return
+					return true
 				elseif inst == 0xB2 then
 					--getstatic
 					local fr = cp[u2()]
 					local cl = resolveClass(cp[fr.class_index])
-					local name = cp[cp[fr.name_and_type_index].name_index].bytes
-					local descriptor = cp[cp[fr.name_and_type_index].descriptor_index].bytes
-					--print(descriptor)
-					push(asObjRef(cl.fields[name].value), descriptor)
+					if cl then
+						local name = cp[cp[fr.name_and_type_index].name_index].bytes
+						local descriptor = cp[cp[fr.name_and_type_index].descriptor_index].bytes
+						--print(descriptor)
+						push(asObjRef(cl.fields[name].value), descriptor)
+					end
 				elseif inst == 0xB3 then
 					--putstatic
 					local fr = cp[u2()]
 					local cl = resolveClass(cp[fr.class_index])
-					local name = cp[cp[fr.name_and_type_index].name_index].bytes
-					cl.fields[name].value = pop().data
+					if cl then
+						local name = cp[cp[fr.name_and_type_index].name_index].bytes
+						cl.fields[name].value = pop().data
+					end
 				elseif inst == 0xB4 then
 					local fr = cp[u2()]
 					local name = cp[cp[fr.name_and_type_index].name_index].bytes
@@ -836,73 +893,69 @@ function loadJavaClass(file)
 					local mr = cp[u2()]
 					if inst == 0xB9 then u2() end -- invokeinterface has two dead bytes in the instruction
 					local cl = resolveClass(cp[mr.class_index])
-					local name = cp[cp[mr.name_and_type_index].name_index].bytes..cp[cp[mr.name_and_type_index].descriptor_index].bytes
-					local mt = findMethod(cl,name)
-					local args = {}
-					for i=#mt.desc-1,1,-1 do
-						args[i+1] = pop()
-					end
-					args[1] = pop()
-					local obj = args[1].data
-					if type(obj) == "table" and obj.methods then -- if the object holds its own methods, use those so A a = new B(); a.c() calls B.c(), not A.c()
-						mt = findMethod(obj, name)
-					end
-					if bit.band(mt.acc,METHOD_ACC.NATIVE) == METHOD_ACC.NATIVE then
-						for i=1, #args do
-							args[i] = args[i].data
+					if cl then
+						local name = cp[cp[mr.name_and_type_index].name_index].bytes..cp[cp[mr.name_and_type_index].descriptor_index].bytes
+						local mt = findMethod(cl,name)
+						local args = {}
+						for i=#mt.desc-1,1,-1 do
+							args[i+1] = pop()
 						end
-					end
-					local ret = mt[1](unpack(args))
-					if mt.desc[#mt.desc].type ~= "V" then
-						push(ret)
+						args[1] = pop()
+						local obj = args[1].data
+						if type(obj) == "table" and obj.methods then -- if the object holds its own methods, use those so A a = new B(); a.c() calls B.c(), not A.c()
+							mt = findMethod(obj, name)
+						end
+						local status, ret = mt[1](unpack(args))
+						if mt.desc[#mt.desc].type ~= "V" and status then
+							push(ret)
+						end
+						if not status then throw(ret) end
 					end
 				elseif inst == 0xB7 then
 					--invokespecial
 					local mr = cp[u2()]
 					local cl = resolveClass(cp[mr.class_index])
-					local name = cp[cp[mr.name_and_type_index].name_index].bytes..cp[cp[mr.name_and_type_index].descriptor_index].bytes
-					local mt = findMethod(cl,name)
-					local args = {}
-					for i=#mt.desc-1,1,-1 do
-						args[i+1] = pop()
-					end
-					args[1] = pop()
-					local obj = args[1].data
-					if bit.band(mt.acc,METHOD_ACC.NATIVE) == METHOD_ACC.NATIVE then
-						for i=1, #args do
-							args[i] = args[i].data
+					if cl then
+						local name = cp[cp[mr.name_and_type_index].name_index].bytes..cp[cp[mr.name_and_type_index].descriptor_index].bytes
+						local mt = findMethod(cl,name)
+						local args = {}
+						for i=#mt.desc-1,1,-1 do
+							args[i+1] = pop()
 						end
-					end
-					local ret = mt[1](unpack(args))
-					if mt.desc[#mt.desc].type ~= "V" then
-						push(ret)
+						args[1] = pop()
+						local obj = args[1].data
+						local status, ret = mt[1](unpack(args))
+						if mt.desc[#mt.desc].type ~= "V" and status then
+							push(ret)
+						end
+						if not status then throw(ret) end
 					end
 				elseif inst == 0xB8 then
 					--invokestatic
 					local mr = cp[u2()]
 					local cl = resolveClass(cp[mr.class_index])
-					local name = cp[cp[mr.name_and_type_index].name_index].bytes..cp[cp[mr.name_and_type_index].descriptor_index].bytes
-					local mt = findMethod(cl,name)
-					local args = {}
-					for i=#mt.desc-1,1,-1 do
-						args[i] = pop()
-					end
-					if bit.band(mt.acc,METHOD_ACC.NATIVE) == METHOD_ACC.NATIVE then
-						for i=1, #args do
-							args[i] = args[i].data
+					if cl then
+						local name = cp[cp[mr.name_and_type_index].name_index].bytes..cp[cp[mr.name_and_type_index].descriptor_index].bytes
+						local mt = findMethod(cl,name)
+						local args = {}
+						for i=#mt.desc-1,1,-1 do
+							args[i] = pop()
 						end
-					end
-					local ret = mt[1](unpack(args))
-					if mt.desc[#mt.desc].type ~= "V" then
-						push(ret)
+						local status, ret = mt[1](unpack(args))
+						if mt.desc[#mt.desc].type ~= "V" and status then
+							push(ret)
+						end
+						if not status then throw(ret) end
 					end
 				elseif inst == 0xBB then
 					--new
 					local cr = cp[u2()]
 					local c = resolveClass(cr)
-					local obj = newInstance(c)
-					local type = "L"..c.name:gsub("%.", "/")..";"
-					push(asObjRef(obj, type))
+					if c then
+						local obj = newInstance(c)
+						local type = "L"..c.name:gsub("%.", "/")..";"
+						push(asObjRef(obj, type))
+					end
 				elseif inst == 0xBC then
 					--newarray
 					local type = "[" .. ARRAY_TYPES[u1()]
@@ -912,13 +965,19 @@ function loadJavaClass(file)
 					--anewarray
 					local cr = cp[u2()]
 					local c = resolveClass(cr)
-					local type = "[L" .. c.name:gsub("%.", "/")..";"
-					local length = pop().data
-					push(asObjRef({length=length}, type))
+					if c then
+						local type = "[L" .. c.name:gsub("%.", "/")..";"
+						local length = pop().data
+						push(asObjRef({length=length}, type))
+					end
 				elseif inst == 0xBE then
 					--arraylength
 					local arr = pop()
 					push(asInt(arr.data.length))
+				elseif inst == 0xBF then
+					--throw
+					local exc = pop()
+					throw(exc)
 				elseif inst == 0xC0 then
 					--checkcast
 					local obj = pop()
@@ -941,6 +1000,7 @@ function loadJavaClass(file)
 				end
 			end
 			popStackTrace()
+			return true
 		end
 	end
 	
@@ -985,6 +1045,9 @@ function loadJavaClass(file)
 			super = cp[cp[super_class].name_index].bytes:gsub("/",".")
 		end
 		local Class = createClass(super, cn)
+		if not Class then
+			return false
+		end
 		Class.constantPool = cp
 		
 		--start processing the data
@@ -1027,17 +1090,21 @@ function loadJavaClass(file)
 			local mt_name = Class.name.."."..m.name
 
 			if ca then
-				m[1] = createCodeFunction(ca.code, mt_name)
+				m[1] = createCodeFunction(ca, mt_name)
 			elseif bit.band(m.acc,METHOD_ACC.NATIVE) == METHOD_ACC.NATIVE then
 				if not natives[cn] then natives[cn] = {} end
 				m[1] = function(...)
-					pushStackTrace(mt_name)
+					pushStackTrace(mt_name, function() end)
 					if not natives[cn][m.name] then
 						error("Native not implemented: " .. m.name, 0)
 					end
-					local ret = natives[cn][m.name](...)
+					local args = {}
+					for i,v in ipairs({...}) do
+						args[i] = v.data
+					end
+					local ret = natives[cn][m.name](unpack(args))
 					popStackTrace()
-					return ret
+					return true, ret
 				end
 			else
 				--print(m.name," doesn't have code")

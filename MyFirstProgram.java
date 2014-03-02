@@ -25,6 +25,9 @@ class Yo extends Test {
 		a = b;
 		System.out.println(b);
 		m();
+
+		int[] errTest = new int[3];
+		int errTest2 = errTest[5];
 	}
 }
 
@@ -38,7 +41,11 @@ public class MyFirstProgram {
 		System.out.println(Computer.isTurtle());
 		System.out.println(a+a);
 		Yo y = new Yo();
-		y.v();
+		try {
+			y.v();
+		} catch (ArrayIndexOutOfBoundsException e) {
+			e.printStackTrace();
+		}
 		Test t = y;
 		t.m();
 

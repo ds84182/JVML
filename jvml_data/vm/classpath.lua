@@ -1,5 +1,7 @@
 local class = {}
 local stack_trace = {}
+local throw_trace = {} -- throw functions are traced so that code can throw from anywhere
+						-- for example, class not found exception
 
 function findMethod(c,name)
 	if not c then error("class expected, got nil",2) end
@@ -40,10 +42,14 @@ function classByName(cn)
 
 	local fullPath = resolvePath(cd..".class")
 	if not fullPath then
-		error("Cannot find class ".. cn, 0)
+		local exc = newInstance(classByName("java.lang.ClassNotFoundException"))
+		local obj = asObjRef(exc, "Ljava/lang/ClassNotFoundException;")
+		exc.fields.message.value = cn
+		throw(obj)
+		return false
 	end
 	if not loadJavaClass(fullPath) then
-		error("Cannot load class " .. cn, 0)
+		return false
 	else
 		c = class[cn]
 		return c
@@ -57,6 +63,7 @@ function createClass(super_name, cn)
 	cls.methods = {}
 	if super_name then -- we have a custom Object class file which won't have a super
 		local super = classByName(super_name)
+		if not super then return false end
 		cls.super = super
 		for i,v in pairs(super.fields) do
 			cls.fields[i] = v
@@ -72,13 +79,13 @@ local function _classof(class1, class2)
 	if class1 == class2 then
 		return 0
 	end
-	local dist = classof(class1.super, class2)
+	local dist = _classof(class1.super, class2)
 	if dist then
 		return dist
 	else
 		local cp = class1.constantPool
 		for i,v in ipairs(class1.interfaces) do
-			local dist = classof(classByName(cp[cp[v].name_index].bytes:gsub("/",".")), class2)
+			local dist = _classof(classByName(cp[cp[v].name_index].bytes:gsub("/",".")), class2)
 			if dist then
 				return dist
 			end
@@ -115,20 +122,24 @@ function classof(class1, class2)
 	return _classof(classByName(class1), classByName(class2))
 end
 
-function pushStackTrace(s)
+function pushStackTrace(s, throw)
 	table.insert(stack_trace, s)
+	table.insert(throw_trace, throw)
 end
 
 function popStackTrace()
 	table.remove(stack_trace)
+	table.remove(throw_trace)
 end
 
-function printStackTrace(isError, tabLevel)
+function getStackTrace()
 	local reversedtable = {}
 	for i,v in ipairs(stack_trace) do
 		reversedtable[#stack_trace - i + 1] = v
 	end
-	local p = ((isError and printError) or print)
-	local tabs = ("\t"):rep(tabLevel or 0)
-	p(tabs..table.concat(reversedtable,"\n"..tabs))
+	return "\t"..table.concat(reversedtable,"\n\t")
+end
+
+function throw(exc)
+	throw_trace[#throw_trace](exc)
 end
