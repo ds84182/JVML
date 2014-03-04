@@ -15,7 +15,14 @@ dofile(fs.combine(env.jcd, "jvml_data/vm/classpath.lua"))
 dofile(fs.combine(env.jcd, "jvml_data/vm/classloader.lua"))
 
 env.jcp = env.jcp .. ":/" .. env.jcd -- So that loadJavaClass isn't needed here and so Yo and Test get loaded right
-local ok, exc = env.findMethod(env.classByName("MyFirstProgram"),"main([Ljava/lang/String;)V")[1]()
+
+local ok, err = pcall(function()
+	local ok, exc = env.findMethod(env.classByName("MyFirstProgram"),"main([Ljava/lang/String;)V")[1]()
+	if not ok then
+		env.findMethod(exc.data, "printStackTrace()V")[1](exc)
+	end
+end)
 if not ok then
-	env.findMethod(exc.data, "printStackTrace()V")[1](exc)
+	printError(err)
+	printError(env.getStackTrace())
 end

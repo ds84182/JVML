@@ -63,7 +63,6 @@ function createClass(super_name, cn)
 	cls.methods = {}
 	if super_name then -- we have a custom Object class file which won't have a super
 		local super = classByName(super_name)
-		if not super then return false end
 		cls.super = super
 		for i,v in pairs(super.fields) do
 			cls.fields[i] = v
