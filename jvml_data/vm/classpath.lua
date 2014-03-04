@@ -13,12 +13,9 @@ function findMethod(c,name)
 end
 
 function newInstance(class)
-	local obj = {fields={},methods={},name=class.name,class=class}
+	local obj = {fields={},name=class.name,class=class}
 	for i, v in pairs(class.fields) do
 		obj.fields[i] = {descriptor=v.descriptor,attrib=v.attrib,value=nil}
-	end
-	for i, v in pairs(class.methods) do
-		obj.methods[i] = v
 	end
 	
 	return obj

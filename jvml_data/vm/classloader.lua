@@ -901,7 +901,7 @@ function loadJavaClass(file)
 						args[1] = pop()
 						local obj = args[1].data
 						if type(obj) == "table" and obj.methods then -- if the object holds its own methods, use those so A a = new B(); a.c() calls B.c(), not A.c()
-							mt = findMethod(obj, name)
+							mt = findMethod(obj.class, name)
 						end
 						local status, ret = mt[1](unpack(args))
 						if mt.desc[#mt.desc].type ~= "V" and status then
