@@ -1,8 +1,28 @@
-dofile("jvml_data/vm/classloader.lua")
-jcd = "minecraft_server.1.7.4/"
-loadLuaClass("jvml_data/native/java/lang/Object.lua","java.lang.Object")
-loadLuaClass("jvml_data/native/java/io/PrintStream.lua","java.io.PrintStream")
-loadLuaClass("jvml_data/native/java/lang/System.lua","java.lang.System")
-print(loadJavaClass("MyFirstProgram.class"))
+local jcd = fs.combine("", shell.getRunningProgram():sub(1, -1 - #(fs.getName(shell.getRunningProgram()))))
 
-findMethod(class["MyFirstProgram"],"main([Ljava/lang/String;)V")[1]()
+local env = setmetatable({
+	jcd = jcd,
+	jcp = "/" .. fs.combine(jcd, "CCLib/build/classes")..":."
+}, {__index=getfenv()})
+
+local function dofile(path, ...)
+	local f = assert(loadfile(path))
+	setfenv(f, env)
+	return f(...)
+end
+
+dofile(fs.combine(env.jcd, "jvml_data/vm/classpath.lua"))
+dofile(fs.combine(env.jcd, "jvml_data/vm/classloader.lua"))
+
+env.jcp = env.jcp .. ":/" .. env.jcd -- So that loadJavaClass isn't needed here and so Yo and Test get loaded right
+
+local ok, err = pcall(function()
+	local ok, exc = env.findMethod(env.classByName("MyFirstProgram"),"main([Ljava/lang/String;)V")[1]()
+	if not ok then
+		env.findMethod(exc.data, "printStackTrace()V")[1](exc)
+	end
+end)
+if not ok then
+	printError(err)
+	printError(env.getStackTrace())
+end
